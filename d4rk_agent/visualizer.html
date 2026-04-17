@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIRIAN — 시스템 시각화</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@300;400;700&display=swap');
+
+  :root {
+    --bg:      #050a0f;
+    --panel:   #080f18;
+    --border:  #0d2137;
+    --accent:  #00d4ff;
+    --accent2: #7b2fff;
+    --accent3: #ff2d6e;
+    --green:   #00ff9d;
+    --yellow:  #ffd600;
+    --text:    #b8d4e8;
+    --dim:     #3a5568;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans KR', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* 배경 그리드 */
+  body::before {
+    content:'';
+    position:fixed; inset:0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events:none; z-index:0;
+  }
+
+  .container { position:relative; z-index:1; padding:20px; max-width:1600px; margin:0 auto; }
+
+  /* 헤더 */
+  .header {
+    display:flex; align-items:center; gap:16px;
+    padding:16px 24px; margin-bottom:24px;
+    background: linear-gradient(135deg, rgba(0,212,255,0.08), rgba(123,47,255,0.08));
+    border:1px solid var(--border);
+    border-left:3px solid var(--accent);
+  }
+  .header-title {
+    font-family:'Orbitron',sans-serif;
+    font-size:22px; font-weight:900;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    letter-spacing:4px;
+  }
+  .header-sub { font-family:'Share Tech Mono'; font-size:11px; color:var(--dim); letter-spacing:2px; }
+  .status-dot {
+    width:8px; height:8px; border-radius:50%;
+    background:var(--green);
+    box-shadow:0 0 8px var(--green);
+    animation: pulse 2s infinite;
+    margin-left:auto;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .update-time { font-family:'Share Tech Mono'; font-size:10px; color:var(--dim); }
+
+  /* 그리드 */
+  .grid { display:grid; gap:16px; }
+  .grid-4 { grid-template-columns: repeat(4,1fr); }
+  .grid-3 { grid-template-columns: repeat(3,1fr); }
+  .grid-2 { grid-template-columns: repeat(2,1fr); }
+  .grid-12 { grid-template-columns: 1fr 2fr; }
+
+  /* 패널 */
+  .panel {
+    background: var(--panel);
+    border:1px solid var(--border);
+    padding:16px;
+    position:relative;
+    overflow:hidden;
+    transition: border-color 0.3s;
+  }
+  .panel:hover { border-color: rgba(0,212,255,0.3); }
+  .panel::before {
+    content:'';
+    position:absolute; top:0; left:0; right:0; height:1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity:0.5;
+  }
+  .panel-title {
+    font-family:'Orbitron'; font-size:9px; font-weight:700;
+    color:var(--accent); letter-spacing:3px;
+    margin-bottom:12px; text-transform:uppercase;
+  }
+
+  /* 감정 게이지 */
+  .emotion-display {
+    text-align:center; padding:8px;
+  }
+  .emotion-name {
+    font-family:'Orbitron'; font-size:18px; font-weight:700;
+    color:var(--accent); margin-bottom:4px;
+    text-shadow:0 0 20px var(--accent);
+  }
+  .emotion-baseline { font-size:11px; color:var(--dim); }
+
+  /* 게이지 바 */
+  .gauge { margin:6px 0; }
+  .gauge-label {
+    display:flex; justify-content:space-between;
+    font-size:10px; color:var(--dim); margin-bottom:3px;
+    font-family:'Share Tech Mono';
+  }
+  .gauge-track {
+    height:4px; background:rgba(255,255,255,0.05);
+    border-radius:2px; overflow:hidden;
+  }
+  .gauge-fill {
+    height:100%; border-radius:2px;
+    transition: width 1s ease;
+  }
+  .gauge-fill.energy  { background: linear-gradient(90deg,#00ff9d,#00d4ff); }
+  .gauge-fill.curious { background: linear-gradient(90deg,#7b2fff,#00d4ff); }
+  .gauge-fill.boredom { background: linear-gradient(90deg,#ffd600,#ff6b00); }
+  .gauge-fill.social  { background: linear-gradient(90deg,#ff2d6e,#7b2fff); }
+  .gauge-fill.intimacy{ background: linear-gradient(90deg,#ff2d6e,#ff6b00); }
+
+  /* 스탯 카드 */
+  .stat { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03); }
+  .stat:last-child { border-bottom:none; }
+  .stat-label { font-size:11px; color:var(--dim); font-family:'Share Tech Mono'; }
+  .stat-value { font-family:'Orbitron'; font-size:13px; font-weight:700; color:var(--accent); }
+  .stat-value.green  { color:var(--green); }
+  .stat-value.yellow { color:var(--yellow); }
+  .stat-value.red    { color:var(--accent3); }
+
+  /* 목표 */
+  .goal-item {
+    padding:8px; margin:4px 0;
+    background:rgba(0,212,255,0.04);
+    border-left:2px solid var(--accent2);
+    font-size:11px;
+  }
+  .goal-progress-bar {
+    height:2px; background:rgba(255,255,255,0.05);
+    border-radius:1px; margin-top:6px; overflow:hidden;
+  }
+  .goal-progress-fill {
+    height:100%;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    transition: width 1s ease;
+  }
+
+  /* 로그 */
+  .log-list { max-height:180px; overflow-y:auto; }
+  .log-list::-webkit-scrollbar { width:3px; }
+  .log-list::-webkit-scrollbar-thumb { background:var(--border); }
+  .log-entry {
+    font-family:'Share Tech Mono'; font-size:10px;
+    padding:3px 0; border-bottom:1px solid rgba(255,255,255,0.03);
+    display:flex; gap:8px; align-items:flex-start;
+  }
+  .log-time { color:var(--dim); flex-shrink:0; }
+  .log-module { color:var(--accent2); flex-shrink:0; min-width:60px; }
+  .log-msg { color:var(--text); flex:1; word-break:break-all; }
+  .log-entry.success .log-msg { color:var(--green); }
+  .log-entry.fail    .log-msg { color:var(--accent3); }
+
+  /* 스킬 */
+  .skill-item {
+    display:flex; align-items:center; gap:8px;
+    padding:4px 0;
+  }
+  .skill-name { font-size:10px; color:var(--text); min-width:80px; font-family:'Share Tech Mono'; }
+  .skill-bar-track { flex:1; height:3px; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden; }
+  .skill-bar-fill { height:100%; background: linear-gradient(90deg,var(--accent2),var(--accent)); transition:width 1s; }
+  .skill-level { font-family:'Orbitron'; font-size:9px; color:var(--accent); min-width:30px; text-align:right; }
+
+  /* 기억 노드 */
+  .memory-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .memory-card {
+    padding:8px; background:rgba(0,212,255,0.04);
+    border:1px solid rgba(0,212,255,0.1);
+    text-align:center;
+  }
+  .memory-count { font-family:'Orbitron'; font-size:20px; font-weight:900; color:var(--accent); }
+  .memory-label { font-size:9px; color:var(--dim); letter-spacing:1px; margin-top:2px; }
+
+  /* 인과관계 */
+  .causal-item {
+    font-size:10px; padding:5px;
+    background:rgba(123,47,255,0.06);
+    border-left:2px solid var(--accent2);
+    margin:3px 0; font-family:'Share Tech Mono';
+  }
+  .causal-arrow { color:var(--accent); }
+  .causal-prob { color:var(--yellow); float:right; }
+
+  /* 상태 머신 */
+  .state-flow { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin:8px 0; }
+  .state-node {
+    padding:4px 10px; font-size:9px; font-family:'Orbitron';
+    letter-spacing:1px; border:1px solid var(--dim);
+    color:var(--dim); transition:all 0.3s;
+  }
+  .state-node.active {
+    border-color:var(--accent); color:var(--accent);
+    background:rgba(0,212,255,0.1);
+    box-shadow:0 0 10px rgba(0,212,255,0.3);
+  }
+  .state-arrow { color:var(--dim); font-size:10px; }
+
+  /* 섹션 구분 */
+  .section-gap { margin-top:16px; }
+
+  /* 차트 */
+  .chart-wrap { position:relative; height:140px; }
+
+  /* 반응형 */
+  @media(max-width:1200px) {
+    .grid-4 { grid-template-columns: repeat(2,1fr); }
+    .grid-3 { grid-template-columns: repeat(2,1fr); }
+  }
+  @media(max-width:700px) {
+    .grid-4,.grid-3,.grid-2,.grid-12 { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- 헤더 -->
+  <div class="header">
+    <div>
+      <div class="header-title">SIRIAN RAIN</div>
+      <div class="header-sub">SPS AUTONOMOUS AI AGENT — SYSTEM VISUALIZER</div>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
+      <span class="update-time" id="updateTime">연결 중...</span>
+      <div class="status-dot" id="statusDot"></div>
+    </div>
+  </div>
+
+  <!-- 1행: 감정 + 동기 + 메모리 + 상태머신 -->
+  <div class="grid grid-4">
+
+    <!-- 감정 -->
+    <div class="panel">
+      <div class="panel-title">Emotion Engine</div>
+      <div class="emotion-display">
+        <div class="emotion-name" id="emotionName">—</div>
+        <div style="font-family:'Share Tech Mono';font-size:11px;color:var(--accent2);margin:4px 0" id="emotionIntensity">강도: —</div>
+        <div class="emotion-baseline" id="emotionBaseline">기준선: —</div>
+      </div>
+      <div style="margin-top:10px;">
+        <div class="gauge">
+          <div class="gauge-label"><span>감정 강도</span><span id="eIntVal">0%</span></div>
+          <div class="gauge-track"><div class="gauge-fill energy" id="eIntBar" style="width:0%"></div></div>
+        </div>
+        <div class="gauge">
+          <div class="gauge-label"><span>친밀도</span><span id="intimacyVal">0%</span></div>
+          <div class="gauge-track"><div class="gauge-fill intimacy" id="intimacyBar" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 동기 -->
+    <div class="panel">
+      <div class="panel-title">Motivation</div>
+      <div class="gauge">
+        <div class="gauge-label"><span>Energy</span><span id="energyVal">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill energy" id="energyBar" style="width:50%"></div></div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-label"><span>Curiosity</span><span id="curiosityVal">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill curious" id="curiosityBar" style="width:50%"></div></div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-label"><span>Boredom</span><span id="boredomVal">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill boredom" id="boredomBar" style="width:30%"></div></div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-label"><span>Social Need</span><span id="socialVal">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill social" id="socialBar" style="width:40%"></div></div>
+      </div>
+    </div>
+
+    <!-- 기억 현황 -->
+    <div class="panel">
+      <div class="panel-title">Memory Systems</div>
+      <div class="memory-grid">
+        <div class="memory-card">
+          <div class="memory-count" id="memVector">—</div>
+          <div class="memory-label">VECTOR</div>
+        </div>
+        <div class="memory-card">
+          <div class="memory-count" id="memEpisode">—</div>
+          <div class="memory-label">EPISODE</div>
+        </div>
+        <div class="memory-card">
+          <div class="memory-count" id="memEnhanced">—</div>
+          <div class="memory-label">ENHANCED</div>
+        </div>
+        <div class="memory-card">
+          <div class="memory-count" id="memGraph">—</div>
+          <div class="memory-label">GRAPH</div>
+        </div>
+        <div class="memory-card">
+          <div class="memory-count" id="memStrategy">—</div>
+          <div class="memory-label">STRATEGY</div>
+        </div>
+        <div class="memory-card">
+          <div class="memory-count" id="memTrain">—</div>
+          <div class="memory-label">FINETUNE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- State Machine -->
+    <div class="panel">
+      <div class="panel-title">State Machine</div>
+      <div class="state-flow">
+        <div class="state-node" id="st_observe">OBS</div>
+        <div class="state-arrow">→</div>
+        <div class="state-node" id="st_plan">PLAN</div>
+        <div class="state-arrow">→</div>
+        <div class="state-node" id="st_act">ACT</div>
+        <div class="state-arrow">→</div>
+        <div class="state-node" id="st_reflect">REFL</div>
+        <div class="state-arrow">→</div>
+        <div class="state-node" id="st_adapt">ADPT</div>
+      </div>
+      <div class="section-gap">
+        <div class="stat">
+          <span class="stat-label">사이클</span>
+          <span class="stat-value" id="cycleCount">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">성능 추세</span>
+          <span class="stat-value" id="perfTrend">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">외출 모드</span>
+          <span class="stat-value" id="awayStatus">OFF</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">현재 집중</span>
+          <span class="stat-value" id="focusStatus" style="font-size:9px;">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2행: RL + 스킬 + 목표 -->
+  <div class="grid grid-3 section-gap">
+
+    <!-- RL 성적표 -->
+    <div class="panel">
+      <div class="panel-title">RL Policy</div>
+      <div class="chart-wrap">
+        <canvas id="rlChart"></canvas>
+      </div>
+      <div style="margin-top:8px;">
+        <div class="stat">
+          <span class="stat-label">총 에피소드</span>
+          <span class="stat-value" id="rlEpisodes">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">예측 정확도</span>
+          <span class="stat-value" id="causalAcc">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 스킬 -->
+    <div class="panel">
+      <div class="panel-title">Skill Library</div>
+      <div id="skillList"></div>
+      <div style="margin-top:8px;" class="stat">
+        <span class="stat-label">마스터 스킬</span>
+        <span class="stat-value green" id="masteredSkills">—</span>
+      </div>
+    </div>
+
+    <!-- 목표 -->
+    <div class="panel">
+      <div class="panel-title">Goals</div>
+      <div style="font-size:9px;color:var(--dim);font-family:'Share Tech Mono';margin-bottom:6px;">단기 목표</div>
+      <div id="shortGoals"></div>
+      <div style="font-size:9px;color:var(--dim);font-family:'Share Tech Mono';margin:8px 0 4px;">장기 목표</div>
+      <div id="longGoals"></div>
+    </div>
+  </div>
+
+  <!-- 3행: 인과관계 + 성능 그래프 + 로그 -->
+  <div class="grid grid-12 section-gap">
+
+    <!-- 인과관계 + 시스템 -->
+    <div>
+      <div class="grid grid-2" style="gap:16px">
+        <div class="panel">
+          <div class="panel-title">Causal Model</div>
+          <div id="causalList"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">System Health</div>
+          <div id="systemStats"></div>
+        </div>
+      </div>
+      <div class="panel section-gap">
+        <div class="panel-title">Multi-Agent Queue</div>
+        <div id="agentQueue" style="font-family:'Share Tech Mono';font-size:10px;color:var(--dim)">대기 없음</div>
+        <div style="margin-top:8px" class="stat">
+          <span class="stat-label">연구 주제</span>
+          <span class="stat-value" id="researchTopic" style="font-size:9px">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 성능 그래프 + 최근 로그 -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">Performance Trend</div>
+        <div class="chart-wrap" style="height:120px">
+          <canvas id="perfChart"></canvas>
+        </div>
+      </div>
+      <div class="panel section-gap">
+        <div class="panel-title">System Log</div>
+        <div class="log-list" id="logList"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const WS_URL = 'ws://localhost:7865/ws/visualizer';
+let ws = null;
+let rlChart = null, perfChart = null;
+let perfData = [];
+let rlData = {};
+
+// ─── Chart 초기화 ───
+function initCharts() {
+  const chartOpts = {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{color:'#3a5568',font:{size:9,family:'Share Tech Mono'}},grid:{color:'rgba(255,255,255,0.03)'}},
+      y:{ticks:{color:'#3a5568',font:{size:9}},grid:{color:'rgba(255,255,255,0.03)'},min:0,max:1}
+    }
+  };
+
+  // RL 차트
+  rlChart = new Chart(document.getElementById('rlChart'), {
+    type:'bar',
+    data:{
+      labels:[],
+      datasets:[{
+        data:[],
+        backgroundColor:'rgba(0,212,255,0.4)',
+        borderColor:'rgba(0,212,255,0.8)',
+        borderWidth:1
+      }]
+    },
+    options:{...chartOpts, scales:{...chartOpts.scales, y:{...chartOpts.scales.y, min:0, max:1}}}
+  });
+
+  // 성능 추세 차트
+  perfChart = new Chart(document.getElementById('perfChart'), {
+    type:'line',
+    data:{
+      labels:[],
+      datasets:[{
+        data:[],
+        borderColor:'rgba(0,212,255,0.8)',
+        backgroundColor:'rgba(0,212,255,0.1)',
+        borderWidth:2,
+        pointRadius:2,
+        fill:true,
+        tension:0.4
+      }]
+    },
+    options:{...chartOpts}
+  });
+}
+
+// ─── WebSocket 연결 ───
+function connect() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    document.getElementById('statusDot').style.background = 'var(--green)';
+    document.getElementById('statusDot').style.boxShadow = '0 0 8px var(--green)';
+    document.getElementById('updateTime').textContent = '연결됨';
+    ws.send(JSON.stringify({type:'request_viz_data'}));
+  };
+
+  ws.onclose = () => {
+    document.getElementById('statusDot').style.background = 'var(--accent3)';
+    document.getElementById('updateTime').textContent = '연결 끊김 — 재연결 중...';
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => {};
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      handleMessage(msg);
+    } catch {}
+  };
+}
+
+// ─── 메시지 처리 ───
+function handleMessage(msg) {
+  const t = msg.type;
+  const now = new Date().toLocaleTimeString('ko-KR');
+  document.getElementById('updateTime').textContent = now + ' 업데이트';
+
+  if (t === 'viz_data' || t === 'viz_update') {
+    updateAll(msg.data || msg);
+  } else if (t === 'log_entry') {
+    addLog(msg);
+  } else if (t === 'agent_msg') {
+    addLog({module:'sirian', message:msg.text, level:'info'});
+  }
+}
+
+function updateAll(d) {
+  if (!d) return;
+  updateEmotion(d.emotion || {});
+  updateMotivation(d.motivation || {});
+  updateMemory(d.memory || {});
+  updateStateMachine(d.state_machine || {});
+  updateRL(d.rl || {});
+  updateSkills(d.skills || {});
+  updateGoals(d.goals || {});
+  updateCausal(d.causal || []);
+  updateSystem(d.system || {});
+  updateAgentQueue(d.agent_queue || []);
+  updatePerf(d.performance || []);
+}
+
+function updateEmotion(e) {
+  setText('emotionName', e.current || '—');
+  setText('emotionIntensity', '강도: ' + pct(e.intensity));
+  setText('emotionBaseline', '기준선: ' + (e.baseline || '—'));
+  setBar('eIntBar','eIntVal', e.intensity||0);
+  setBar('intimacyBar','intimacyVal', e.intimacy||0);
+}
+
+function updateMotivation(m) {
+  setBar('energyBar','energyVal', m.energy||0.5);
+  setBar('curiosityBar','curiosityVal', m.curiosity||0.5);
+  setBar('boredomBar','boredomVal', m.boredom||0.3);
+  setBar('socialBar','socialVal', m.social_need||0.4);
+}
+
+function updateMemory(m) {
+  setText('memVector',   m.vector   || 0);
+  setText('memEpisode',  m.episode  || 0);
+  setText('memEnhanced', m.enhanced || 0);
+  setText('memGraph',    m.graph    || 0);
+  setText('memStrategy', m.strategy || 0);
+  setText('memTrain',    m.finetune || 0);
+}
+
+function updateStateMachine(sm) {
+  const states = ['observe','plan','act','reflect','adapt'];
+  states.forEach(s => {
+    const el = document.getElementById('st_'+s);
+    if (el) el.classList.toggle('active', sm.current_state === s);
+  });
+  setText('cycleCount', sm.cycle || 0);
+  const trend = sm.perf_trend || '—';
+  const tEl = document.getElementById('perfTrend');
+  if (tEl) {
+    tEl.textContent = trend;
+    tEl.className = 'stat-value ' + (trend==='상승'?'green':trend==='하락'?'red':'yellow');
+  }
+  setText('awayStatus', sm.is_away ? 'ON 🚶':'OFF');
+  setText('focusStatus', sm.focus || '—');
+  setText('researchTopic', sm.research_topic || '—');
+}
+
+function updateRL(rl) {
+  setText('rlEpisodes', rl.episodes || 0);
+  setText('causalAcc', pct(rl.causal_accuracy||0.5));
+  if (rl.action_values && rlChart) {
+    const labels = Object.keys(rl.action_values);
+    const data   = labels.map(k => rl.action_values[k]);
+    rlChart.data.labels = labels;
+    rlChart.data.datasets[0].data = data;
+    rlChart.update();
+  }
+}
+
+function updateSkills(skills) {
+  const el = document.getElementById('skillList');
+  if (!el) return;
+  const entries = Object.entries(skills.levels || {}).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  el.innerHTML = entries.map(([name,level]) =>
+    `<div class="skill-item">
+      <div class="skill-name">${name.slice(0,12)}</div>
+      <div class="skill-bar-track"><div class="skill-bar-fill" style="width:${level*100}%"></div></div>
+      <div class="skill-level">${Math.round(level*100)}%</div>
+    </div>`
+  ).join('');
+  setText('masteredSkills', (skills.mastered||[]).join(', ') || '없음');
+}
+
+function updateGoals(goals) {
+  const sg = document.getElementById('shortGoals');
+  const lg = document.getElementById('longGoals');
+  if (sg) sg.innerHTML = (goals.short||[]).slice(0,3).map(g=>
+    `<div class="goal-item">${g.goal||g}</div>`
+  ).join('') || '<div style="color:var(--dim);font-size:10px">없음</div>';
+  if (lg) lg.innerHTML = (goals.long||[]).slice(0,2).map(g=>
+    `<div class="goal-item">
+      ${g.goal||g}
+      <div class="goal-progress-bar">
+        <div class="goal-progress-fill" style="width:${(g.progress||0)*100}%"></div>
+      </div>
+    </div>`
+  ).join('') || '<div style="color:var(--dim);font-size:10px">없음</div>';
+}
+
+function updateCausal(rules) {
+  const el = document.getElementById('causalList');
+  if (!el) return;
+  el.innerHTML = rules.slice(0,5).map(r=>
+    `<div class="causal-item">
+      <span class="causal-prob">${Math.round((r.probability||0.5)*100)}%</span>
+      ${r.cause} <span class="causal-arrow">→</span> ${r.effect}
+    </div>`
+  ).join('') || '<div style="color:var(--dim);font-size:10px">데이터 없음</div>';
+}
+
+function updateSystem(s) {
+  const el = document.getElementById('systemStats');
+  if (!el) return;
+  const items = [
+    ['RL 규칙', s.rl_rules||0, ''],
+    ['반성 기록', s.reflexions||0, ''],
+    ['세계 모델', s.world_nodes||0, ''],
+    ['파인튜닝', s.finetune_count||0, s.finetune_count>=200?'green':''],
+    ['오류 복구', s.errors||0, s.errors>5?'red':'green'],
+    ['Multi-Agent', s.agent_cycles||0, ''],
+  ];
+  el.innerHTML = items.map(([label,val,cls])=>
+    `<div class="stat">
+      <span class="stat-label">${label}</span>
+      <span class="stat-value ${cls}">${val}</span>
+    </div>`
+  ).join('');
+}
+
+function updateAgentQueue(queue) {
+  const el = document.getElementById('agentQueue');
+  if (!el) return;
+  el.textContent = queue.length
+    ? queue.slice(0,3).map((t,i)=>`${i+1}. ${(t.goal||t).slice(0,40)}`).join('\n')
+    : '대기 없음';
+}
+
+function updatePerf(data) {
+  if (!data.length || !perfChart) return;
+  perfData = data.slice(-20);
+  perfChart.data.labels = perfData.map((_,i)=>i+1);
+  perfChart.data.datasets[0].data = perfData;
+  perfChart.update();
+}
+
+// ─── 로그 ───
+const MAX_LOGS = 80;
+let logs = [];
+function addLog(entry) {
+  const time = new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  logs.push({time, module:entry.module||'sys', message:(entry.message||entry.text||'').slice(0,80), level:entry.level||'info'});
+  if (logs.length > MAX_LOGS) logs.shift();
+  renderLogs();
+}
+function renderLogs() {
+  const el = document.getElementById('logList');
+  if (!el) return;
+  el.innerHTML = [...logs].reverse().map(l=>
+    `<div class="log-entry ${l.level==='error'||l.level==='fail'?'fail':l.level==='success'?'success':''}">
+      <span class="log-time">${l.time}</span>
+      <span class="log-module">[${l.module}]</span>
+      <span class="log-msg">${l.message}</span>
+    </div>`
+  ).join('');
+}
+
+// ─── 유틸 ───
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+function setBar(barId, valId, val) {
+  const pv = Math.round((val||0)*100);
+  const bar = document.getElementById(barId);
+  const lbl = document.getElementById(valId);
+  if (bar) bar.style.width = pv+'%';
+  if (lbl) lbl.textContent = pv+'%';
+}
+function pct(v) { return Math.round((v||0)*100)+'%'; }
+
+// ─── 30초마다 데이터 요청 ───
+setInterval(() => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type:'request_viz_data'}));
+  }
+}, 5000);
+
+initCharts();
+connect();
+</script>
+</body>
+</html>
